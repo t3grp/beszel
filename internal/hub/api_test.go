@@ -602,6 +602,67 @@ func TestApiRoutesAuthentication(t *testing.T) {
 			ExpectedContent: []string{"Something went wrong while processing your request."},
 			TestAppFactory:  testAppFactory,
 		},
+		// /disk-breakdown routes
+		{
+			Name:            "GET /disk-breakdown - no auth should fail",
+			Method:          http.MethodGet,
+			URL:             fmt.Sprintf("/api/beszel/disk-breakdown?system=%s", system.Id),
+			ExpectedStatus:  401,
+			ExpectedContent: []string{"requires valid"},
+			TestAppFactory:  testAppFactory,
+		},
+		{
+			Name:   "GET /disk-breakdown - missing system param should fail",
+			Method: http.MethodGet,
+			URL:    "/api/beszel/disk-breakdown",
+			Headers: map[string]string{
+				"Authorization": userToken,
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{"Invalid", "parameter"},
+			TestAppFactory:  testAppFactory,
+		},
+		{
+			Name:   "GET /disk-breakdown - invalid system should fail",
+			Method: http.MethodGet,
+			URL:    "/api/beszel/disk-breakdown?system=invalid-system",
+			Headers: map[string]string{
+				"Authorization": userToken,
+			},
+			ExpectedStatus:  404,
+			ExpectedContent: []string{"The requested resource wasn't found."},
+			TestAppFactory:  testAppFactory,
+		},
+		{
+			Name:            "GET /disk-breakdown - request for valid non-user system should fail",
+			Method:          http.MethodGet,
+			URL:             fmt.Sprintf("/api/beszel/disk-breakdown?system=%s", system.Id),
+			ExpectedStatus:  404,
+			ExpectedContent: []string{"The requested resource wasn't found."},
+			TestAppFactory:  testAppFactory,
+			Headers: map[string]string{
+				"Authorization": user2Token,
+			},
+		},
+		{
+			Name:   "GET /disk-breakdown - agent without the capability returns an empty result",
+			Method: http.MethodGet,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown?system=%s", system.Id),
+			Headers: map[string]string{
+				"Authorization": userToken,
+			},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"checkedAt":0`, `"refreshing":false`},
+			TestAppFactory:  testAppFactory,
+		},
+		{
+			Name:            "POST /disk-breakdown/refresh - no auth should fail",
+			Method:          http.MethodPost,
+			URL:             fmt.Sprintf("/api/beszel/disk-breakdown/refresh?system=%s", system.Id),
+			ExpectedStatus:  401,
+			ExpectedContent: []string{"requires valid"},
+			TestAppFactory:  testAppFactory,
+		},
 		// /systemd routes
 		{
 			Name:            "GET /systemd/info - no auth should fail",

@@ -207,6 +207,9 @@ func (h *Hub) registerApiRoutes(se *core.ServeEvent) error {
 	apiAuth.GET("/systemd/logs", h.getSystemdLogs)
 	// get pending package updates
 	apiAuth.GET("/package-updates", h.getPackageUpdates)
+	// get the disk usage breakdown, and start a fresh scan
+	apiAuth.GET("/disk-breakdown", h.getDiskBreakdown)
+	apiAuth.POST("/disk-breakdown/refresh", h.refreshDiskBreakdown).BindFunc(excludeReadOnlyRole)
 	// /containers routes
 	if enabled, _ := utils.GetEnv("CONTAINER_DETAILS"); enabled != "false" {
 		// get container logs
@@ -487,6 +490,43 @@ func (h *Hub) getSystemdLogs(e *core.RequestEvent) error {
 		return e.InternalServerError("", err)
 	}
 	return e.JSON(http.StatusOK, map[string]string{"logs": logs})
+}
+
+// getDiskBreakdown handles GET /api/beszel/disk-breakdown requests.
+// The agent answers from its cache and scans in the background, so the
+// client polls while the response has refreshing set.
+func (h *Hub) getDiskBreakdown(e *core.RequestEvent) error {
+	return h.diskBreakdown(e, false)
+}
+
+// refreshDiskBreakdown handles POST /api/beszel/disk-breakdown/refresh requests.
+func (h *Hub) refreshDiskBreakdown(e *core.RequestEvent) error {
+	return h.diskBreakdown(e, true)
+}
+
+func (h *Hub) diskBreakdown(e *core.RequestEvent, force bool) error {
+	systemID := e.Request.URL.Query().Get("system")
+	if systemID == "" {
+		return e.BadRequestError("Invalid system parameter", nil)
+	}
+	system, err := h.sm.GetSystem(systemID)
+	if err != nil || !system.HasUser(e.App, e.Auth) {
+		return e.NotFoundError("", nil)
+	}
+	// Agents without this feature do not advertise it.
+	systemRecord, err := e.App.FindRecordById("systems", systemID)
+	if err != nil {
+		return e.NotFoundError("", err)
+	}
+	var info systementity.Info
+	if err := systemRecord.UnmarshalJSONField("info", &info); err != nil || !info.DiskBreakdown {
+		return e.JSON(http.StatusOK, systementity.DiskBreakdown{})
+	}
+	breakdown, err := system.FetchDiskBreakdownFromAgent(force)
+	if err != nil {
+		return e.InternalServerError("", err)
+	}
+	return e.JSON(http.StatusOK, breakdown)
 }
 
 // getPackageUpdates handles GET /api/beszel/package-updates requests

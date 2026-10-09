@@ -73,6 +73,8 @@ export interface SystemInfo {
 	v: string
 	/** agent can read the system journal */
 	jl?: boolean
+	/** agent can report a disk usage breakdown (fork-only) */
+	t3db?: boolean
 	/** system is using podman */
 	p?: boolean
 	/** highest gpu utilization */
@@ -245,6 +247,38 @@ export interface PackageUpdates {
 	/** true if the package manager flags security updates per package */
 	securityKnown?: boolean
 	packages: PackageUpdate[] | null
+}
+
+/** one entry in a disk usage breakdown from GET /api/beszel/disk-breakdown */
+export interface DiskItem {
+	kind: "image" | "container" | "volume" | "dir" | "file"
+	name: string
+	size: number
+	/** false for images without containers, unreferenced volumes and stopped containers */
+	inUse?: boolean
+}
+
+export interface DiskCategory {
+	total: number
+	reclaimable?: number
+	count: number
+	active?: number
+}
+
+export interface DiskBreakdown {
+	/** unix time in seconds the last scan finished, 0 if none has */
+	checkedAt?: number
+	/** true while the agent is scanning */
+	refreshing?: boolean
+	docker?: {
+		images: DiskCategory
+		containers: DiskCategory
+		volumes: DiskCategory
+		buildCache: DiskCategory
+		items?: DiskItem[]
+	}
+	dockerErr?: string
+	paths?: { path: string; total: number; children?: DiskItem[]; partial?: boolean; error?: string }[]
 }
 
 export interface ZfsDataset {

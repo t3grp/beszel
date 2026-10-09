@@ -58,6 +58,17 @@ export function LazyPackageUpdatesTable({ systemId, counts }: { systemId: string
 	)
 }
 
+const DiskBreakdownCard = lazy(() => import("./disk-breakdown"))
+
+export function LazyDiskBreakdown({ systemId }: { systemId: string }) {
+	const { isIntersecting, ref } = useIntersectionObserver({ rootMargin: "90px" })
+	return (
+		<div ref={ref} className={cn(isIntersecting && "contents")}>
+			{isIntersecting && <DiskBreakdownCard systemId={systemId} />}
+		</div>
+	)
+}
+
 const NetworkMonitorsTable = lazy(() => import("../../network-monitors-table/network-monitors-table"))
 
 export function LazyNetworkMonitorsTable({ systemId }: { systemId: string }) {

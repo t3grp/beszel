@@ -33,6 +33,14 @@ const (
 	// Add new actions here...
 )
 
+// Fork-only actions. These sit far above the iota block on purpose: upstream
+// appends a new action almost every release, and a stock agent must never read
+// one of these numbers as one of its own.
+const (
+	// Request the disk usage breakdown (Docker and configured paths) from the agent.
+	GetDiskBreakdown WebSocketAction = 200
+)
+
 // HubRequest defines the structure for requests sent from hub to agent.
 type HubRequest[T any] struct {
 	Action WebSocketAction `cbor:"0,keyasint"`
@@ -90,4 +98,9 @@ type SystemdInfoRequest struct {
 
 type SystemdLogsRequest struct {
 	ServiceName string `cbor:"0,keyasint"`
+}
+
+type DiskBreakdownRequest struct {
+	// Force starts a new scan even if the cached result is still fresh.
+	Force bool `cbor:"0,keyasint,omitempty"`
 }

@@ -16,6 +16,7 @@ import { WiFiChart } from "./system/charts/wifi-chart"
 import { GpuPowerChart, GpuCharts } from "./system/charts/gpu-charts"
 import {
 	LazyContainersTable,
+	LazyDiskBreakdown,
 	LazyNetworkMonitorsTable,
 	LazyPackageUpdatesTable,
 	LazySmartTable,
@@ -74,6 +75,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 	const hasSystemd = system.info.sv
 	const hasGpu = hasGpuData || hasGpuPowerData
 	const hasZfs = Object.keys(systemStats.at(-1)?.stats?.z ?? {}).length > 0
+	const hasDiskBreakdown = system.status === SystemStatus.Up && !!system.info.t3db
 	const hasNetworkMonitors = supportsNetworkMonitors(system)
 	// counts key the table so it refetches the list only after a new check
 	const packageUpdates = system.status === SystemStatus.Up && system.info.pu?.[0] ? system.info.pu.join(",") : ""
@@ -164,6 +166,8 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 
 				{maybeHasSmartData && <LazySmartTable systemId={system.id} />}
 
+				{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} />}
+
 				{hasContainersTable && <LazyContainersTable systemId={system.id} />}
 
 				{hasSystemd && <LazySystemdTable systemId={system.id} />}
@@ -252,6 +256,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							{hasZfs && <ZfsCharts systemData={systemData} />}
 							{hasZfs && <LazyZfsTable systemId={system.id} />}
 							{maybeHasSmartData && <LazySmartTable systemId={system.id} />}
+							{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} />}
 						</>
 					)}
 				</TabsContent>

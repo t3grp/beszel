@@ -873,6 +873,16 @@ func (sys *System) FetchPackageUpdatesFromAgent() (system.PackageUpdates, error)
 	return result, err
 }
 
+// FetchDiskBreakdownFromAgent fetches the cached disk usage breakdown from the agent.
+// The agent never waits for a scan, so the short timeout is enough.
+func (sys *System) FetchDiskBreakdownFromAgent(force bool) (system.DiskBreakdown, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var result system.DiskBreakdown
+	err := sys.request(ctx, common.GetDiskBreakdown, common.DiskBreakdownRequest{Force: force}, &result)
+	return result, err
+}
+
 // FetchZfsDataFromAgent fetches ZFS detail data from the agent.
 func (sys *System) FetchZfsDataFromAgent(force bool) (*zfs.ZfsData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

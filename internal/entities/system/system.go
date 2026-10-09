@@ -195,6 +195,8 @@ type Info struct {
 	PackageUpdates []uint16           `json:"pu,omitempty" cbor:"25,keyasint,omitempty"`  // [totalUpdates, securityUpdates] (security omitted if unknown)
 	WiFi           map[string]WiFi    `json:"wf,omitempty" cbor:"26,keyasint,omitempty"`  // connected Wi-Fi interfaces
 	SystemdLogs    bool               `json:"jl,omitempty" cbor:"27,keyasint,omitempty"`  // agent can read the system journal
+	// Fork-only. Far from upstream's sequential keys so a stock agent's next field never lands on it.
+	DiskBreakdown bool `json:"t3db,omitempty" cbor:"128,keyasint,omitempty"` // agent can report a disk usage breakdown
 }
 
 // Data that does not change during process lifetime and is not needed in All Systems table

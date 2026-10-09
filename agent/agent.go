@@ -55,6 +55,7 @@ type Agent struct {
 	monitorManager            *MonitorManager                                       // Manages network monitors
 	storagePoolManager        *StoragePoolManager                                   // Manages storage pool and dataset data
 	packageUpdates            *packageUpdatesManager                                // Checks for pending package updates
+	diskBreakdown             *diskBreakdownManager                                 // Reports what is using disk space, on demand
 }
 
 // NewAgent creates a new agent with the given data directory for persisting data.
@@ -164,6 +165,9 @@ func NewAgent(dataDir ...string) (agent *Agent, err error) {
 	}
 
 	agent.packageUpdates = newPackageUpdatesManager(agent.dataDir)
+
+	agent.diskBreakdown = newDiskBreakdownManager(agent.dockerManager)
+	agent.systemInfo.DiskBreakdown = agent.diskBreakdown != nil
 
 	// initialize GPU manager
 	agent.gpuManager, err = NewGPUManager()

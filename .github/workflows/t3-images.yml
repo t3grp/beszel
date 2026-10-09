@@ -1,0 +1,77 @@
+name: Make T3 docker images
+
+# Fork-only workflow: builds the hub and the scratch-based agent with the disk
+# breakdown feature and pushes them to ghcr.io/<owner>/beszel and
+# ghcr.io/<owner>/beszel-agent. Push a tag like t3-0.21.0-1 to publish; the
+# image tag is the git tag without the "t3-" prefix. The prefix must not start
+# with "v", or the upstream docker-images and release workflows also fire.
+
+on:
+  push:
+    tags:
+      - "t3-*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: beszel
+            dockerfile: ./internal/dockerfile_hub
+          - name: beszel-agent
+            dockerfile: ./internal/dockerfile_agent
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --no-save --cwd ./internal/site
+
+      - name: Build site
+        run: bun run --cwd ./internal/site build
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Docker metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          flavor: latest=false
+          tags: |
+            type=match,pattern=t3-(.*),group=1,enable=${{ github.ref_type == 'tag' }}
+            type=sha
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}

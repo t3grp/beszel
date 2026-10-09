@@ -60,6 +60,7 @@ func NewHandlerRegistry() *HandlerRegistry {
 	registry.Register(common.SyncNetworkMonitors, &SyncNetworkMonitorsHandler{})
 	registry.Register(common.GetZfsData, &GetZfsDataHandler{})
 	registry.Register(common.GetPackageUpdates, &GetPackageUpdatesHandler{})
+	registry.Register(common.GetDiskBreakdown, &GetDiskBreakdownHandler{})
 
 	return registry
 }
@@ -220,6 +221,27 @@ func (h *GetPackageUpdatesHandler) Handle(hctx *HandlerContext) error {
 		return hctx.SendResponse(system.PackageUpdates{}, hctx.RequestID)
 	}
 	return hctx.SendResponse(hctx.Agent.packageUpdates.list(), hctx.RequestID)
+}
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+// GetDiskBreakdownHandler returns the cached disk usage breakdown and starts a
+// background scan when it is missing or stale. It never waits for a scan.
+type GetDiskBreakdownHandler struct{}
+
+func (h *GetDiskBreakdownHandler) Handle(hctx *HandlerContext) error {
+	if hctx.Agent.diskBreakdown == nil {
+		return hctx.SendResponse(system.DiskBreakdown{}, hctx.RequestID)
+	}
+	var req common.DiskBreakdownRequest
+	if len(hctx.Request.Data) > 0 {
+		if err := cbor.Unmarshal(hctx.Request.Data, &req); err != nil {
+			return err
+		}
+	}
+	return hctx.SendResponse(hctx.Agent.diskBreakdown.request(req.Force), hctx.RequestID)
 }
 
 ////////////////////////////////////////////////////////////////////////////
