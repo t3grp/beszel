@@ -168,6 +168,7 @@ func NewAgent(dataDir ...string) (agent *Agent, err error) {
 
 	agent.diskBreakdown = newDiskBreakdownManager(agent.dockerManager)
 	agent.systemInfo.DiskBreakdown = agent.diskBreakdown != nil
+	agent.systemInfo.DiskPrune = agent.diskBreakdown != nil && agent.diskBreakdown.pruneEnabled
 
 	// initialize GPU manager
 	agent.gpuManager, err = NewGPUManager()

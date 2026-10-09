@@ -1,16 +1,27 @@
-import { RefreshCwIcon } from "lucide-react"
+import { RefreshCwIcon, Trash2Icon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { pb } from "@/lib/api"
+import { Checkbox } from "@/components/ui/checkbox"
+import { isAdmin, pb } from "@/lib/api"
 import { cn, decimalString, formatBytes, formatShortDate } from "@/lib/utils"
-import type { DiskBreakdown, DiskCategory, DiskItem } from "@/types"
+import type { DiskBreakdown, DiskCategory, DiskItem, DiskPruneRequest } from "@/types"
 
-/** How often to ask the agent again while it is still scanning. */
+/** How often to ask the agent again while it is still working. */
 const POLL_MS = 3000
-/** Stop polling after this long; the agent gives up on a scan after 10 minutes. */
-const POLL_MAX_MS = 11 * 60 * 1000
+/** Stop polling after this long; the agent gives up on a prune and on a scan after 10 minutes each. */
+const POLL_MAX_MS = 21 * 60 * 1000
 
 function bytes(size: number) {
 	const { value, unit } = formatBytes(size)
@@ -22,6 +33,23 @@ const dockerCategories: { key: "images" | "containers" | "volumes" | "buildCache
 	{ key: "containers", label: "Container layers", color: "var(--chart-2)" },
 	{ key: "volumes", label: "Volumes", color: "var(--chart-3)" },
 	{ key: "buildCache", label: "Build cache", color: "var(--chart-4)" },
+]
+
+/** What the prune dialog offers. Volumes are never offered. Stopped containers start unticked. */
+const pruneOptions: {
+	key: keyof DiskPruneRequest
+	label: string
+	hint: string
+	docker: "images" | "containers" | "buildCache"
+}[] = [
+	{ key: "images", label: "Unused images", hint: "Images no container uses", docker: "images" },
+	{ key: "buildCache", label: "Build cache", hint: "Unused build cache entries", docker: "buildCache" },
+	{
+		key: "containers",
+		label: "Stopped containers",
+		hint: "A stopped service is rebuilt on its next deploy",
+		docker: "containers",
+	},
 ]
 
 const kindLabel: Record<string, string> = {
@@ -37,9 +65,12 @@ const kindLabel: Record<string, string> = {
  * folders the agent was told to scan. The agent scans in the background when asked,
  * so this polls until the scan has finished.
  */
-export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
+export default function DiskBreakdownCard({ systemId, canPrune }: { systemId: string; canPrune: boolean }) {
 	const [data, setData] = useState<DiskBreakdown | null>(null)
 	const [error, setError] = useState<string | null>(null)
+	const [pruneOpen, setPruneOpen] = useState(false)
+	const [pruneError, setPruneError] = useState<string | null>(null)
+	const [selection, setSelection] = useState<DiskPruneRequest>({ images: true, buildCache: true, containers: false })
 	const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 	const startedAt = useRef(0)
 	const cancelled = useRef(false)
@@ -55,8 +86,8 @@ export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
 					if (cancelled.current) return
 					setData(result)
 					setError(null)
-					const scanning = result.refreshing || !result.checkedAt
-					if (scanning && Date.now() - startedAt.current < POLL_MAX_MS) {
+					const working = result.refreshing || result.pruning || !result.checkedAt
+					if (working && Date.now() - startedAt.current < POLL_MAX_MS) {
 						clearTimeout(timer.current)
 						timer.current = setTimeout(() => load(false), POLL_MS)
 					}
@@ -79,11 +110,34 @@ export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
 		}
 	}, [load])
 
+	/** Starts the prune on the agent, then polls until it and the scan after it finish. */
+	const prune = useCallback(() => {
+		setPruneError(null)
+		startedAt.current = Date.now()
+		pb.send<DiskBreakdown>("/api/beszel/disk-breakdown/prune", {
+			method: "POST",
+			query: { system: systemId },
+			body: selection,
+		})
+			.then((result) => {
+				if (cancelled.current) return
+				setData(result)
+				clearTimeout(timer.current)
+				timer.current = setTimeout(() => load(false), POLL_MS)
+			})
+			.catch((err) => {
+				if (cancelled.current) return
+				setPruneError(err?.message || "Failed to free space")
+			})
+	}, [systemId, selection, load])
+
 	if (!data && !error) {
 		return null
 	}
 
+	const pruning = !!data?.pruning
 	const scanning = !!data && (data.refreshing || !data.checkedAt)
+	const busy = scanning || pruning
 	const docker = data?.docker
 	const dockerTotal = docker ? dockerCategories.reduce((sum, c) => sum + docker[c.key].total, 0) : 0
 
@@ -94,11 +148,13 @@ export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
 					<div className="px-2 sm:px-1">
 						<CardTitle className="mb-2">Disk Breakdown</CardTitle>
 						<CardDescription>
-							{scanning
-								? "Scanning..."
-								: data?.checkedAt
-									? `Scanned ${formatShortDate(new Date(data.checkedAt * 1000).toISOString())}`
-									: ""}
+							{pruning
+								? "Freeing space..."
+								: scanning
+									? "Scanning..."
+									: data?.checkedAt
+										? `Scanned ${formatShortDate(new Date(data.checkedAt * 1000).toISOString())}`
+										: ""}
 						</CardDescription>
 					</div>
 					<Button
@@ -106,10 +162,10 @@ export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
 						variant="outline"
 						size="sm"
 						className="ms-auto"
-						disabled={scanning}
+						disabled={busy}
 						onClick={() => load(true)}
 					>
-						<RefreshCwIcon className={cn("size-3.5 me-1.5", scanning && "animate-spin")} />
+						<RefreshCwIcon className={cn("size-3.5 me-1.5", busy && "animate-spin")} />
 						Rescan
 					</Button>
 				</div>
@@ -158,6 +214,88 @@ export default function DiskBreakdownCard({ systemId }: { systemId: string }) {
 					)}
 				</section>
 			))}
+
+			{isAdmin() && docker && (
+				<footer className="px-2 sm:px-1 mt-6 pt-4 border-t flex flex-wrap items-center gap-x-4 gap-y-2">
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						disabled={!canPrune || busy}
+						title={canPrune ? undefined : "Set DISK_PRUNE=true on this system's agent to turn this on"}
+						onClick={() => setPruneOpen(true)}
+					>
+						<Trash2Icon className="size-3.5 me-1.5" />
+						Free up space
+					</Button>
+					<div className="text-sm text-muted-foreground min-w-0">
+						{!canPrune ? (
+							<>
+								Turned off. Set <code className="font-mono">DISK_PRUNE=true</code> on this system's agent to use it.
+							</>
+						) : pruning ? (
+							"Freeing space..."
+						) : data?.prune ? (
+							<>
+								Freed {bytes(data.prune.freed)} ·{" "}
+								{formatShortDate(new Date(data.prune.finishedAt * 1000).toISOString())}
+							</>
+						) : (
+							"Removes unused Docker data. Volumes are never touched."
+						)}
+					</div>
+					{pruneError && <p className="basis-full text-sm text-destructive">{pruneError}</p>}
+					{!!data?.prune?.errors?.length && (
+						<ul className="basis-full text-sm text-destructive">
+							{data.prune.errors.map((message) => (
+								<li key={message}>{message}</li>
+							))}
+						</ul>
+					)}
+				</footer>
+			)}
+
+			<AlertDialog open={pruneOpen} onOpenChange={setPruneOpen}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Free up space on this system?</AlertDialogTitle>
+						<AlertDialogDescription>
+							Removes unused Docker data that is at least 7 days old. Volumes are never touched. Removed images are
+							pulled or rebuilt the next time something needs them. This cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<div className="grid gap-3">
+						{pruneOptions.map(({ key, label, hint, docker: category }) => (
+							<label key={key} htmlFor={`prune-${key}`} className="flex items-start gap-3 cursor-pointer">
+								<Checkbox
+									id={`prune-${key}`}
+									className="mt-0.5"
+									checked={selection[key]}
+									onCheckedChange={(checked) => setSelection((prev) => ({ ...prev, [key]: checked === true }))}
+								/>
+								<span className="grid min-w-0 text-sm">
+									<span className="font-medium">
+										{label}
+										{!!docker?.[category].reclaimable && (
+											<span className="font-normal text-muted-foreground">
+												{" "}
+												· up to {bytes(docker[category].reclaimable)}
+											</span>
+										)}
+									</span>
+									<span className="text-muted-foreground">{hint}</span>
+								</span>
+							</label>
+						))}
+					</div>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction disabled={!Object.values(selection).some(Boolean)} onClick={prune}>
+							Free up space
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</Card>
 	)
 }

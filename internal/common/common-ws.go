@@ -39,6 +39,8 @@ const (
 const (
 	// Request the disk usage breakdown (Docker and configured paths) from the agent.
 	GetDiskBreakdown WebSocketAction = 200
+	// Start a background prune of unused Docker data. The agent refuses it unless DISK_PRUNE=true.
+	PruneDiskSpace WebSocketAction = 201
 )
 
 // HubRequest defines the structure for requests sent from hub to agent.
@@ -103,4 +105,14 @@ type SystemdLogsRequest struct {
 type DiskBreakdownRequest struct {
 	// Force starts a new scan even if the cached result is still fresh.
 	Force bool `cbor:"0,keyasint,omitempty"`
+}
+
+// DiskPruneRequest selects what to remove. Volumes are never pruned.
+type DiskPruneRequest struct {
+	// Containers removes containers that have been stopped for at least a week.
+	Containers bool `cbor:"0,keyasint,omitempty"`
+	// Images removes images no container uses that are at least a week old.
+	Images bool `cbor:"1,keyasint,omitempty"`
+	// BuildCache removes unused build cache entries that are at least a week old.
+	BuildCache bool `cbor:"2,keyasint,omitempty"`
 }

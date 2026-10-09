@@ -15,6 +15,7 @@ import (
 	"github.com/blang/semver"
 	"github.com/henrygd/beszel"
 	"github.com/henrygd/beszel/internal/alerts"
+	"github.com/henrygd/beszel/internal/common"
 	systementity "github.com/henrygd/beszel/internal/entities/system"
 	"github.com/henrygd/beszel/internal/ghupdate"
 	"github.com/henrygd/beszel/internal/hub/config"
@@ -210,6 +211,8 @@ func (h *Hub) registerApiRoutes(se *core.ServeEvent) error {
 	// get the disk usage breakdown, and start a fresh scan
 	apiAuth.GET("/disk-breakdown", h.getDiskBreakdown)
 	apiAuth.POST("/disk-breakdown/refresh", h.refreshDiskBreakdown).BindFunc(excludeReadOnlyRole)
+	// remove unused Docker data on the agent (admin only; the agent must opt in)
+	apiAuth.POST("/disk-breakdown/prune", h.pruneDiskSpace).BindFunc(requireAdminRole)
 	// /containers routes
 	if enabled, _ := utils.GetEnv("CONTAINER_DETAILS"); enabled != "false" {
 		// get container logs
@@ -525,6 +528,51 @@ func (h *Hub) diskBreakdown(e *core.RequestEvent, force bool) error {
 	breakdown, err := system.FetchDiskBreakdownFromAgent(force)
 	if err != nil {
 		return e.InternalServerError("", err)
+	}
+	return e.JSON(http.StatusOK, breakdown)
+}
+
+// pruneDiskSpace handles POST /api/beszel/disk-breakdown/prune requests.
+// The body selects what to remove: {"containers": bool, "images": bool, "buildCache": bool}.
+// The agent prunes in the background, so the client polls GET /disk-breakdown
+// until pruning is false and then reads the result from prune.
+func (h *Hub) pruneDiskSpace(e *core.RequestEvent) error {
+	systemID := e.Request.URL.Query().Get("system")
+	if systemID == "" {
+		return e.BadRequestError("Invalid system parameter", nil)
+	}
+	var body struct {
+		Containers bool `json:"containers"`
+		Images     bool `json:"images"`
+		BuildCache bool `json:"buildCache"`
+	}
+	if err := e.BindBody(&body); err != nil {
+		return e.BadRequestError("Invalid request body", err)
+	}
+	if !body.Containers && !body.Images && !body.BuildCache {
+		return e.BadRequestError("Nothing selected to prune", nil)
+	}
+	system, err := h.sm.GetSystem(systemID)
+	if err != nil || !system.HasUser(e.App, e.Auth) {
+		return e.NotFoundError("", nil)
+	}
+	systemRecord, err := e.App.FindRecordById("systems", systemID)
+	if err != nil {
+		return e.NotFoundError("", err)
+	}
+	// The agent only advertises this when it was started with DISK_PRUNE=true.
+	var info systementity.Info
+	if err := systemRecord.UnmarshalJSONField("info", &info); err != nil || !info.DiskPrune {
+		return e.BadRequestError("Disk pruning is not enabled on this system's agent (set DISK_PRUNE=true)", nil)
+	}
+	breakdown, err := system.PruneDiskSpaceOnAgent(common.DiskPruneRequest{
+		Containers: body.Containers,
+		Images:     body.Images,
+		BuildCache: body.BuildCache,
+	})
+	if err != nil {
+		// The agent's refusals ("already running") are written for the user.
+		return e.Error(http.StatusConflict, err.Error(), nil)
 	}
 	return e.JSON(http.StatusOK, breakdown)
 }

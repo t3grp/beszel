@@ -166,7 +166,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 
 				{maybeHasSmartData && <LazySmartTable systemId={system.id} />}
 
-				{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} />}
+				{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} canPrune={!!system.info.t3dp} />}
 
 				{hasContainersTable && <LazyContainersTable systemId={system.id} />}
 
@@ -256,7 +256,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							{hasZfs && <ZfsCharts systemData={systemData} />}
 							{hasZfs && <LazyZfsTable systemId={system.id} />}
 							{maybeHasSmartData && <LazySmartTable systemId={system.id} />}
-							{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} />}
+							{hasDiskBreakdown && <LazyDiskBreakdown systemId={system.id} canPrune={!!system.info.t3dp} />}
 						</>
 					)}
 				</TabsContent>

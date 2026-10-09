@@ -61,6 +61,7 @@ func NewHandlerRegistry() *HandlerRegistry {
 	registry.Register(common.GetZfsData, &GetZfsDataHandler{})
 	registry.Register(common.GetPackageUpdates, &GetPackageUpdatesHandler{})
 	registry.Register(common.GetDiskBreakdown, &GetDiskBreakdownHandler{})
+	registry.Register(common.PruneDiskSpace, &PruneDiskSpaceHandler{})
 
 	return registry
 }
@@ -242,6 +243,29 @@ func (h *GetDiskBreakdownHandler) Handle(hctx *HandlerContext) error {
 		}
 	}
 	return hctx.SendResponse(hctx.Agent.diskBreakdown.request(req.Force), hctx.RequestID)
+}
+
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+
+// PruneDiskSpaceHandler starts a background prune of unused Docker data and
+// returns at once. It fails unless the agent was started with DISK_PRUNE=true.
+type PruneDiskSpaceHandler struct{}
+
+func (h *PruneDiskSpaceHandler) Handle(hctx *HandlerContext) error {
+	if hctx.Agent.diskBreakdown == nil {
+		return errPruneDisabled
+	}
+	var req common.DiskPruneRequest
+	if err := cbor.Unmarshal(hctx.Request.Data, &req); err != nil {
+		return err
+	}
+	breakdown, err := hctx.Agent.diskBreakdown.startPrune(req)
+	if err != nil {
+		return err
+	}
+	return hctx.SendResponse(breakdown, hctx.RequestID)
 }
 
 ////////////////////////////////////////////////////////////////////////////

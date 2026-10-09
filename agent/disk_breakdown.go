@@ -44,6 +44,10 @@ type diskBreakdownManager struct {
 	excludes []string
 	result   system.DiskBreakdown
 	running  bool
+	// pruneEnabled is set by DISK_PRUNE=true. Without it the agent cannot change the host.
+	pruneEnabled bool
+	pruning      bool
+	prune        *system.DiskPruneResult
 }
 
 // newDiskBreakdownManager returns nil if there is neither a Docker engine nor a
@@ -56,7 +60,10 @@ func newDiskBreakdownManager(docker *dockerManager) *diskBreakdownManager {
 	if docker == nil && len(m.paths) == 0 {
 		return nil
 	}
-	slog.Debug("Disk breakdown", "docker", docker != nil, "paths", m.paths)
+	if enabled, _ := utils.GetEnv("DISK_PRUNE"); enabled == "true" {
+		m.pruneEnabled = docker != nil
+	}
+	slog.Debug("Disk breakdown", "docker", docker != nil, "paths", m.paths, "prune", m.pruneEnabled)
 	return m
 }
 
@@ -72,17 +79,23 @@ func splitEnvList(key string) []string {
 }
 
 // request returns the cached breakdown and starts a background scan if there is
-// no result yet, the result is stale or force is set.
+// no result yet, the result is stale or force is set. It does not scan while a
+// prune runs, because the prune ends with a scan of its own.
 func (m *diskBreakdownManager) request(force bool) system.DiskBreakdown {
 	m.Lock()
 	defer m.Unlock()
 	stale := m.result.CheckedAt == 0 || time.Since(time.Unix(m.result.CheckedAt, 0)) >= diskBreakdownTTL
-	if !m.running && (force || stale) {
+	if !m.running && !m.pruning && (force || stale) {
 		m.running = true
 		go m.refresh()
 	}
 	out := m.result
 	out.Refreshing = m.running
+	out.Pruning = m.pruning
+	if m.prune != nil {
+		prune := *m.prune
+		out.Prune = &prune
+	}
 	return out
 }
 

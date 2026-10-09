@@ -75,6 +75,8 @@ export interface SystemInfo {
 	jl?: boolean
 	/** agent can report a disk usage breakdown (fork-only) */
 	t3db?: boolean
+	/** agent was started with DISK_PRUNE=true and can remove unused Docker data */
+	t3dp?: boolean
 	/** system is using podman */
 	p?: boolean
 	/** highest gpu utilization */
@@ -279,6 +281,17 @@ export interface DiskBreakdown {
 	}
 	dockerErr?: string
 	paths?: { path: string; total: number; children?: DiskItem[]; partial?: boolean; error?: string }[]
+	/** true while the agent is removing unused Docker data; a scan follows */
+	pruning?: boolean
+	/** outcome of the last prune since the agent started */
+	prune?: { finishedAt: number; freed: number; errors?: string[] }
+}
+
+/** body of POST /api/beszel/disk-breakdown/prune; volumes are never pruned */
+export interface DiskPruneRequest {
+	containers: boolean
+	images: boolean
+	buildCache: boolean
 }
 
 export interface ZfsDataset {

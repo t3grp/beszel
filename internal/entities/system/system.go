@@ -197,6 +197,7 @@ type Info struct {
 	SystemdLogs    bool               `json:"jl,omitempty" cbor:"27,keyasint,omitempty"`  // agent can read the system journal
 	// Fork-only. Far from upstream's sequential keys so a stock agent's next field never lands on it.
 	DiskBreakdown bool `json:"t3db,omitempty" cbor:"128,keyasint,omitempty"` // agent can report a disk usage breakdown
+	DiskPrune     bool `json:"t3dp,omitempty" cbor:"129,keyasint,omitempty"` // agent was opted in (DISK_PRUNE=true) to remove unused Docker data
 }
 
 // Data that does not change during process lifetime and is not needed in All Systems table

@@ -883,6 +883,17 @@ func (sys *System) FetchDiskBreakdownFromAgent(force bool) (system.DiskBreakdown
 	return result, err
 }
 
+// PruneDiskSpaceOnAgent asks the agent to remove unused Docker data. The agent
+// starts the prune in the background and answers at once with its current state.
+// Its error text is meant for the user.
+func (sys *System) PruneDiskSpaceOnAgent(req common.DiskPruneRequest) (system.DiskBreakdown, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var result system.DiskBreakdown
+	err := sys.request(ctx, common.PruneDiskSpace, req, &result)
+	return result, err
+}
+
 // FetchZfsDataFromAgent fetches ZFS detail data from the agent.
 func (sys *System) FetchZfsDataFromAgent(force bool) (*zfs.ZfsData, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

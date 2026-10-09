@@ -119,6 +119,14 @@ func TestApiRoutesAuthentication(t *testing.T) {
 	})
 	require.NoError(t, err, "Failed to create test system")
 
+	// A system the admin can reach, for routes that are admin only
+	adminSystem, err := beszelTests.CreateRecord(hub, "systems", map[string]any{
+		"name":  "admin-system",
+		"users": []string{adminUser.Id},
+		"host":  "127.0.0.2",
+	})
+	require.NoError(t, err, "Failed to create admin test system")
+
 	testAppFactory := func(t testing.TB) *pbTests.TestApp {
 		return hub.TestApp
 	}
@@ -662,6 +670,88 @@ func TestApiRoutesAuthentication(t *testing.T) {
 			ExpectedStatus:  401,
 			ExpectedContent: []string{"requires valid"},
 			TestAppFactory:  testAppFactory,
+		},
+		// /disk-breakdown/prune: admin only, and only for agents that opted in
+		{
+			Name:            "POST /disk-breakdown/prune - no auth should fail",
+			Method:          http.MethodPost,
+			URL:             fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", system.Id),
+			ExpectedStatus:  401,
+			ExpectedContent: []string{"requires valid"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - regular user should fail",
+			Method: http.MethodPost,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", system.Id),
+			Headers: map[string]string{
+				"Authorization": userToken,
+			},
+			ExpectedStatus:  403,
+			ExpectedContent: []string{"not allowed to perform this action"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - read-only user should fail",
+			Method: http.MethodPost,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", system.Id),
+			Headers: map[string]string{
+				"Authorization": readOnlyUserToken,
+			},
+			ExpectedStatus:  403,
+			ExpectedContent: []string{"not allowed to perform this action"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - admin without a system param should fail",
+			Method: http.MethodPost,
+			URL:    "/api/beszel/disk-breakdown/prune",
+			Headers: map[string]string{
+				"Authorization": adminUserToken,
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{"Invalid", "parameter"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - admin selecting nothing should fail",
+			Method: http.MethodPost,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", adminSystem.Id),
+			Headers: map[string]string{
+				"Authorization": adminUserToken,
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{"Nothing selected"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - admin on a system they do not own should fail",
+			Method: http.MethodPost,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", system.Id),
+			Headers: map[string]string{
+				"Authorization": adminUserToken,
+			},
+			ExpectedStatus:  404,
+			ExpectedContent: []string{"The requested resource wasn't found."},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
+		},
+		{
+			Name:   "POST /disk-breakdown/prune - agent that did not opt in is refused",
+			Method: http.MethodPost,
+			URL:    fmt.Sprintf("/api/beszel/disk-breakdown/prune?system=%s", adminSystem.Id),
+			Headers: map[string]string{
+				"Authorization": adminUserToken,
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{"not enabled", "DISK_PRUNE"},
+			TestAppFactory:  testAppFactory,
+			Body:            jsonReader(map[string]any{"images": true}),
 		},
 		// /systemd routes
 		{
